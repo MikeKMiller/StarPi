@@ -4,7 +4,7 @@ supported by the I2Cdevlib library. It uses a config file to select
 which sensor to use. 
 
 Author and copyright of this file:
-Chris Dick, 2015
+Chris Dick, 2018
 
 This library is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public
@@ -37,17 +37,31 @@ class HalAccelerometer: public Runnable {
         /** Initialise the Accelerometer
          * @return Status initialisation (true = success)
          */    
-            bool  HalAccelerometerInit( void );
+            bool  Init( void );
         /** runs the filter and updates the Roll and Pitch
          */
             void  Run( void );
         /** Access to the Accelerometer data.
+         * @param Ax Pointer to X axis result
+         * @param Ay Pointer to Y axis result
+         * @param Az Pointer to Z axis result
          */
-            void HalAccelerometerGetAll( float* Ax, float* Ay, float* Az );
+            void GetAll( float* Ax, float* Ay, float* Az );
 
-        static HalAccelerometer Accelerometer; /**< Only one copy of the Acceleromter is required */
+            static HalAccelerometer Accelerometer; /**< Only one copy of the Accelerometer is required */
         
     private:
+        /** Get the raw value of the Accelerometer
+         * This function reads 6 bytes at once over the I2C 
+         * instead of 3 transactions.
+         * @param X Raw X result
+         * @param Y Raw Y result
+         * @param Z Raw Z result
+         */
+            void GetRawData( int16_t* X, int16_t* Y, int16_t* Z );
+        /** Get the X axis raw value of the Accelerometer
+         * @return int16_t X axis value
+         */
             int16_t GetXRawAcceleration( void );
         /** Get the Y axis raw value of the Accelerometer
          * @return int16_t Y axis value
@@ -56,13 +70,12 @@ class HalAccelerometer: public Runnable {
         /** Get the Z axis raw value of the Accelerometer
          * @return int16_t Z axis value
          */
-        int16_t GetZRawAcceleration( void );
+            int16_t GetZRawAcceleration( void );
 
-        double Scaling;      /**< scaling for the device */
-        double FilterX[5];   /**< storage for X axis filter data*/
-        double FilterY[5];   /**< storage for Y axis filter data*/
-        double FilterZ[5];   /**< storage for Z axis filter data*/
-        uint8_t FilterCount;/**< counter to keep track of where to store latest data */
+        float Scaling;   /**< scaling for the device         */
+        float FilterX;   /**< storage for X axis filter data */
+        float FilterY;   /**< storage for Y axis filter data */
+        float FilterZ;   /**< storage for Z axis filter data */
 };
 
 #endif /* HAL_ACCELEROMETER_H */

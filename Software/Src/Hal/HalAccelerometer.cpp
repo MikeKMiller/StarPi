@@ -25,27 +25,20 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "Config.h"
 #include <math.h>
 
-#ifdef MPU6050_ACCEL
-#include "MPU6050.h"
-MPU6050 Accel;
-#elif defined ADXL345_ACCEL
-#include "ADXL345.h"
-ADXL345 Accel;
-#elif defined BMA150_ACCEL
-#include "BMA150.h"
-BMA150 Accel;
-#elif L3G4200D_ACCEL
-#include "L3G4200.h"
-L3G4200D Accel;
-#elif defined MPU9150_ACCEL
-#include "MPU9150.h"
-MPU9150 Accel;
-#elif defined LSM303DLHC_ACCEL
 #include "LSM303DLHC.h"
+
 LSM303DLHC_Accel Accel;
-#else
-#error no Accelerometer defined - please edit your config.h file.
-#endif
+
+static float b[] = {1,  -1.4, 1};
+static float a[] = {1, -1.3, 0.5};
+
+static float iirfilter(float x1, float* v1m1, float* v2m1) {
+    float y1 = 0;
+    y1 = ( ( b[0] * x1 ) + *v1m1) / a[0];
+    *v1m1 = ( ( b[1] * x1 ) + *v2m1 ) - ( a[1] * y1 );
+    *v2m1 = ( b[2] * x1 ) - ( a[2] * y1 );
+    return y1;
+}
 
 HalAccelerometer HalAccelerometer::Accelerometer;
 
@@ -58,71 +51,110 @@ HalAccelerometer::HalAccelerometer( void )
 /* Initialise the Accelerometer
  * @return Status initialisation (true = success)
  */
-bool HalAccelerometer::HalAccelerometerInit( void )
+bool HalAccelerometer::Init( void )
 {
     bool Result = false;    
-    FilterCount = 0;
     Accel.initialize();
-    // initialise Accelerometer specifics here
-    Scaling = 32768.0F;
-#ifdef MPU6050_ACCEL
-    Accel.setAccelXSelfTest(false);
-    Accel.setAccelYSelfTest(false);
-    Accel.setAccelZSelfTest(false);
-    Scaling = 16384.0;
     Result = true;
-#elif defined ADXL345_ACCEL
-    #error no init code for Accelerometer
-#elif defined BMA150_ACCEL
-    #error no init code for Accelerometer
-#elif L3G4200D_ACCEL
-    #error no init code for Accelerometer
-#elif defined MPU9150_ACCEL
-    #error no init code for Accelerometer
-#elif defined LSM303DLHC_ACCEL
-// ToDo: configure intial LSM303DLHC settings
-    Scaling = 16384.0;
-    Result = true;
-#endif
     return Result;
 }
 
 /* runs the filter and updates the Roll and Pitch
  */
 void HalAccelerometer::Run( void )
-{    
+{
+    static float Xv1m1 = 0;
+    static float Xv2m1 = 0;
+    static float Yv1m1 = 0;
+    static float Yv2m1 = 0;
+    static float Zv1m1 = 0;
+    static float Zv2m1 = 0;
     int16_t X = 0;
     int16_t Y = 0;
     int16_t Z = 0;
     
-    X = GetXRawAcceleration();
-    Y = GetYRawAcceleration();
-    Z = GetZRawAcceleration();
+    GetRawData( &X, &Y, &Z );
     
-    FilterX[FilterCount] = (((double)X/Scaling));
-    FilterY[FilterCount] = (((double)Y/Scaling));
-    FilterZ[FilterCount] = (((double)Z/Scaling));
-    
-    FilterX[4] = (FilterX[0] + FilterX[1] + FilterX[2] + FilterX[3])/4;
-    FilterY[4] = (FilterY[0] + FilterY[1] + FilterY[2] + FilterY[3])/4;
-    FilterZ[4] = (FilterZ[0] + FilterZ[1] + FilterZ[2] + FilterZ[3])/4;
-    
-    FilterCount++;
-    if (FilterCount == 4)
-    {
-        FilterCount = 0;  
-    }
+    FilterX = iirfilter(((float)X), &Xv1m1, &Xv2m1);
+    FilterY = iirfilter(((float)Y), &Yv1m1, &Yv2m1);
+    FilterZ = iirfilter(((float)Z), &Zv1m1, &Zv2m1);    
 }
+    
+    
 /* Access to the Accelerometer data.
  */
-void HalAccelerometer::HalAccelerometerGetAll( float* Ax, float* Ay, float* Az )
+void HalAccelerometer::GetAll( float* Ax, float* Ay, float* Az )
 {
-    *Ax = FilterX[4];
-    *Ay = FilterY[4];
-    *Az = FilterZ[4];
+    *Ax = FilterX;
+    *Ay = FilterY;
+    *Az = FilterZ;
 }
 
 
+/* Get the raw value of the Accelerometer
+ * This function reads 6 bytes at once over the I2C 
+ * instead of 3 transactions.
+ * @void
+ */
+void HalAccelerometer::GetRawData( int16_t* X, int16_t* Y, int16_t* Z )
+{
+    /*
+        get raw data
+    */
+    int16_t XRaw = 0;
+    int16_t YRaw = 0;
+    int16_t ZRaw = 0;
+    
+    Accel.getAcceleration( &XRaw, &YRaw, &ZRaw);
+    
+#ifdef OBJECTIVE_END_ACCEL_X_PLUS    
+    *X = XRaw;
+#elif defined OBJECTIVE_END_ACCEL_X_MINUS
+    *X = 0 - XRaw;
+#elif defined OBJECTIVE_END_ACCEL_Y_PLUS    
+    *X = YRaw;
+#elif defined OBJECTIVE_END_ACCEL_Y_MINUS
+    *X = 0 - YRaw;
+#elif defined OBJECTIVE_END_ACCEL_Z_PLUS    
+    *X = ZRaw;
+#elif defined OBJECTIVE_END_ACCEL_Z_MINUS
+    *X = 0 - ZRaw;
+#else
+    #error y axis not defined
+#endif
+
+#ifdef TELESCOPE_RIGHT_ACCEL_X_PLUS
+    *Y = XRaw;
+#elif defined TELESCOPE_RIGHT_ACCEL_X_MINUS
+    *Y = 0 - XRaw;
+#elif defined TELESCOPE_RIGHT_ACCEL_Y_PLUS
+    *Y = YRaw;
+#elif defined TELESCOPE_RIGHT_ACCEL_Y_MINUS
+    *Y = 0 - YRaw;
+#elif defined TELESCOPE_RIGHT_ACCEL_Z_PLUS
+    *Y = ZRaw;
+#elif defined TELESCOPE_RIGHT_ACCEL_Z_MINUS
+    *Y = 0 - ZRaw;
+#else
+    #error y axis not defined
+#endif
+
+#ifdef UP_ACCEL_X_PLUS
+    *Z = XRaw;
+#elif defined UP_ACCEL_X_MINUS
+    *Z = 0 - XRaw;
+#elif defined UP_ACCEL_Y_PLUS
+    *Z = YRaw;
+#elif defined UP_ACCEL_Y_MINUS
+    *Z = 0 - YRaw;
+#elif defined UP_ACCEL_Z_PLUS
+    *Z = ZRaw;
+#elif defined UP_ACCEL_Z_MINUS
+    *Z = 0 - ZRaw;
+#else
+    #error z axis not defined
+#endif
+}
 /* Get the X axis raw value of the Accelerometer
  * @return int16_t X axis value
  */

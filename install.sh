@@ -1,61 +1,82 @@
 #! /bin/bash
-#Star Pi
+#Star Pi install script, tested with a Zero W
+# still a lot of work to make this a totally automated installation. see README.md for up to date instructions.
 # please do this first:
-#git clone https://github.com/ChrisDick/StarPi
-#chmod u+x install.sh
-#./install.sh
-# then go and make a nice cup of tea.
-#sudo sed -i 's/raspberrypi/spacecam/g' /etc/hosts
-#sudo sed -i 's/raspberrypi/spacecam/g' /etc/hostname
+# From a console do the following.
+# if using serial gps, disable shell on serial before connecting the GPS to it.
+# for lite install git
+#    sudo apt-get -y install git-core
+# 
+#   sudo raspi-config
+#-enable ssh and i2c
+#-disable the serial shell and enable the hardware serial
+#-set the domain name and boot to cli
+#-reduce the graphics memory
+#-configure wifi
+#-reboot
+#    git clone https://github.com/ChrisDick/StarPi
+# edit any options in the config to match your choice of sensors.
+#    nano StarPi\Software\Src\Config.h
+#    cd ~/StarPi
+#    chmod u+x install.sh
+#    ./install.sh
+# then go and make a nice cup of tea. it'll take a little while.
+# usage over ssh:
+# Any of the following depending on how your run it. ( WMM.COF must be in directory StarPi is started from )
+# start GPSD
+#     gpsd /dev/serial0
+# then
+#     cd ~/StarPi/Software
+#     ./Out/StarPi 10001
 
-#we have a jessie based install
-sudo apt-get install scons 
-sudo apt-get install libgps-dev
+sudo apt-get update
+sudo apt-get -y dist-upgrade
 
-#sudo apt-get update
-#sudo apt-get dist-upgrade
-#sudo rpi-update
-sudo apt-get -y install libncurses5-dev python-dev pps-tools git-core python-smbus i2c-tools
+#Assume we have a raspian based install
+sudo apt-get -y install libnova-dev libcfitsio-dev libusb-1.0-0-dev libjpeg-dev libgsl-dev libcurl4-gnutls-dev cmake gpsd libgps-dev build-essential zlib1g-dev libtiff-dev libfftw3-dev libftdi-dev libraw-dev libdc1394-22-dev libgphoto2-dev libboost-dev libboost-regex-dev librtlsdr-dev liblimesuite-dev libftdi1-dev
 
+#StarPi:
 cd ./Software
-
-#Gps deamon
-wget http://git.savannah.gnu.org/cgit/gpsd.git/snapshot/gpsd-master.tar.gz
-tar -zxf  gpsd-master.tar.gz
-
-rm gpsd-master.tar.gz
-
-cp -r gpsd-master/* ./Src/GPSD 
-rm -r gpsd-master
-
-cd ./Src/GPSD 
-sudo scons && sudo scons check && sudo scons udev-install
-
-cd ./../..
-mkdir Obj
-mkdir Out
-make
-# add to library path
-sudo sed -i -e "/usr/local/bin" /etc/ld.so.conf
-sudo ldconfig
-#copy executables to somewhere in the PATH
-
-sudo cp ./Out/StarPi /usr/local/bin/StarPi
-sudo cp  websocketd /usr/local/bin/websocketd
-sudo chmod u+x /usr/local/bin/websocketd
-sudo cp WMM.COF /usr/local/bin/WMM.COF
+git clone https://github.com/WiringPi/WiringPi
+cd WiringPi
+./build
 cd ..
-#rpicam interface
-git clone https://github.com/silvanmelchior/RPi_Cam_Web_Interface.git
-cp RPi_Cam_config.txt ./RPi_Cam_Web_Interface/config.txt
-sudo mkdir /var/www
-sudo mkdir /var/www/html
-sudo mkdir /var/www/html/StarPi
-sudo mkdir /var/www/html/RPiCam
-sudo cp -ar ./Website/* /var/www/html/StarPi
-cd RPi_Cam_Web_Interface
-sudo cp -ar ./www/* /var/www/html/RPiCam
+make
 
-chmod u+x *.sh
-sudo ./install.sh q
-#line above will ask for reboot, this is the last thing we need to do.
+#indi:
+mkdir -p indi
+cd indi
+git clone https://github.com/indilib/indi.git
+git clone https://github.com/indilib/indi-3rdparty
+mkdir -p build/indi-core
+cd build/indi-core
+cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug ./../../indi/
+make -j4
+sudo make install
+cd ../..
+mkdir -p indidrivers
+cd indidrivers
+mkdir -p build/indi-starpi
+cd build/indi-starpi
+cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug ./../../../../indi-starpi
+make
+sudo cp indi-starpi /usr/bin/indi_starpi
+cd ..
+mkdir indi-gpsd
+cd indi-gpsd
+cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug ./../../../indi-3rdparty/indi-gpsd
+make
+sudo make install
+cd ../../../..
+sudo cp ./indi-starpi/indi_starpi_sk.xml /usr/share/indi/indi_starpi_sk.xml
+
+
+
+#if you want to use the picam with indi, uncomment this line then add indi_v4l2_ccd when calling indiserver:
+#sudo modprobe bcm2835-v4l2
+
+# todo auto start gpsd
+#sudo systemctl enable gpsd.socket
+#sudo systemctl start gpsd.socket
+
+
